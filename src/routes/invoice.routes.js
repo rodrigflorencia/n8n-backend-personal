@@ -1,81 +1,104 @@
 const express = require('express');
 const { body, header } = require('express-validator');
 const axios = require('axios');
+const createError = require('http-errors');
+const { StatusCodes } = require('http-status-codes');
 const router = express.Router();
 
 // Validación de campos
 const validateRequest = [
-  header('x-tenant-id').notEmpty().withMessage('x-tenant-id header is required'),
+  header('x-tenant-id')
+    .notEmpty()
+    .withMessage('x-tenant-id header es requerido')
+    .isAlphanumeric()
+    .withMessage('x-tenant-id debe contener solo caracteres alfanuméricos'),
   body('invoiceImageUrl')
-    .notEmpty().withMessage('invoiceImageUrl is required')
-    .isURL().withMessage('invoiceImageUrl must be a valid URL')
+    .notEmpty().withMessage('invoiceImageUrl es requerido')
+    .isURL().withMessage('invoiceImageUrl debe ser una URL válida')
     .matches(/\.(jpg|jpeg|png|gif|bmp|webp|pdf)$/i)
-    .withMessage('URL must point to a valid image or PDF file')
+    .withMessage('La URL debe apuntar a un archivo de imagen o PDF válido')
 ];
 
+// Middleware para validar que el tenant-id del header coincida con el del body
+const validateTenantId = (req, res, next) => {
+  const tenantIdHeader = req.headers['x-tenant-id'];
+  const tenantIdBody = req.body.tenantId; // Si también lo envías en el body
+  
+  if (tenantIdBody && tenantIdHeader !== tenantIdBody) {
+    return next(createError(
+      StatusCodes.BAD_REQUEST,
+      'El tenant-id del header no coincide con el del cuerpo de la solicitud'
+    ));
+  }
+  
+  next();
+};
+
 // Endpoint para procesar facturas
-router.post('/process-invoice', validateRequest, async (req, res) => {
-  try {
-    const tenantId = req.headers['x-tenant-id'];
-    const { invoiceImageUrl } = req.body;
-
-    // Validar que la URL sea accesible
+router.post('/process-invoice', 
+  validateRequest,
+  validateTenantId,
+  async (req, res, next) => {
     try {
-      const response = await axios.head(invoiceImageUrl, {
-        timeout: 5000 // 5 segundos de timeout
-      });
-      
-      if (!response.headers['content-type'] || 
-          !response.headers['content-type'].match(/(image|application\/pdf)/)) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'URL does not point to a valid image or PDF file' 
+      const tenantId = req.headers['x-tenant-id'];
+      const { invoiceImageUrl } = req.body;
+      const clientId = req.clientId; // Obtenido del middleware de autenticación
+
+      // Validar que la URL sea accesible
+      try {
+        const response = await axios.head(invoiceImageUrl, {
+          timeout: 5000,
+          headers: {
+            'User-Agent': 'InvoiceProcessor/1.0'
+          }
         });
+        
+        const contentType = response.headers['content-type'] || '';
+        if (!contentType.match(/(image\/|application\/pdf)/)) {
+          return next(createError(
+            StatusCodes.BAD_REQUEST,
+            'La URL no apunta a un archivo de imagen o PDF válido'
+          ));
+        }
+      } catch (error) {
+        return next(createError(
+          StatusCodes.BAD_REQUEST,
+          'No se pudo acceder a la URL proporcionada. Por favor, verifica que sea correcta y esté accesible.'
+        ));
       }
+
+      // Enviar a n8n
+      const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL, {
+        tenant_id: tenantId,
+        client_id: clientId,
+        invoice_image_url: invoiceImageUrl,
+        timestamp: new Date().toISOString()
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Request-Source': 'invoice-processor'
+        },
+        timeout: 10000 // 10 segundos de timeout
+      });
+
+      // Registrar la solicitud exitosa
+      req.logger.info('Factura procesada exitosamente', {
+        clientId,
+        tenantId,
+        url: invoiceImageUrl
+      });
+
+      // Devolver la respuesta de n8n
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: n8nResponse.data
+      });
+
     } catch (error) {
-      console.error('Error al validar la URL de la imagen:', error.message);
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Could not access the provided URL. Please check if the URL is correct and accessible.' 
-      });
-    }
-
-    // Enviar a n8n
-    const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL, {
-      tenant_id: tenantId,
-      invoice_image_url: invoiceImageUrl,
-      timestamp: new Date().toISOString()
-    });
-
-    // Devolver la respuesta de n8n
-    res.status(n8nResponse.status).json({
-      success: true,
-      data: n8nResponse.data
-    });
-
-  } catch (error) {
-    console.error('Error al procesar la factura:', error.message);
-    
-    if (error.response) {
-      // Error de respuesta de n8n
-      res.status(error.response.status).json({
-        success: false,
-        error: error.response.data || 'Error al procesar la factura en el servidor remoto'
-      });
-    } else if (error.request) {
-      // No se recibió respuesta del servidor n8n
-      res.status(502).json({
-        success: false,
-        error: 'No se pudo conectar con el servicio de procesamiento. Por favor, intente más tarde.'
-      });
-    } else {
-      // Error en la configuración de la solicitud
-      res.status(500).json({
-        success: false,
-        error: 'Error interno del servidor al procesar la solicitud'
-      });
+      // Pasar el error al manejador de errores
+      next(error);
     }
   }
-});
+);
 
 module.exports = router;
