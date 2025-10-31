@@ -1,0 +1,17 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Entornos de desarrollo
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
