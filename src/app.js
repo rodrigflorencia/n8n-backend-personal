@@ -25,7 +25,7 @@ app.use(cors({
     ? 'https://consulor-ia.web.app'
     : '*',
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-api-key']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-api-key', 'x-demo-token', 'x-client-id', 'x-request-source']
 }));
 
 // Logging middleware
