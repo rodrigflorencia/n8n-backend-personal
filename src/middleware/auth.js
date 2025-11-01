@@ -1,5 +1,38 @@
 const { StatusCodes } = require('http-status-codes');
 const createError = require('http-errors');
+// middleware/auth.js
+const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
+
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
+
+
+async function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token de acceso requerido' });
+  }
+
+  try {
+    // Verificar token con Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(403).json({ error: 'Token inválido o expirado' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Error de autenticación' });
+  }
+}
 
 // Middleware para verificar la API Key
 const apiKeyAuth = (req, res, next) => {
@@ -42,3 +75,5 @@ const apiKeyAuth = (req, res, next) => {
 };
 
 module.exports = { apiKeyAuth };
+
+module.exports = { authenticateToken };
