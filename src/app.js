@@ -110,10 +110,13 @@ app.post('/api/auth/login', loginUser);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: 'Something went wrong processing your request'
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) {
+    console.error('Unhandled error:', err);
+  }
+  res.status(status).json({ 
+    error: status >= 500 ? 'Internal server error' : err.message,
+    message: status >= 500 ? 'Something went wrong processing your request' : err.message
   });
 });
 
