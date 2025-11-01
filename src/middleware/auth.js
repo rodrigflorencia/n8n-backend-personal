@@ -1,79 +1,58 @@
-const { StatusCodes } = require('http-status-codes');
-const createError = require('http-errors');
-// middleware/auth.js
+// backend/middleware/auth.js
 const { createClient } = require('@supabase/supabase-js');
-const jwt = require('jsonwebtoken');
-
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY // Para el backend usamos service key
 );
 
-
-async function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Token de acceso requerido' });
-  }
-
+const authenticateToken = async (req, res, next) => {
   try {
-    // Verificar token con Supabase
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Token de autorización requerido',
+        code: 'MISSING_TOKEN'
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    
+    // Validar token con Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) {
-      return res.status(403).json({ error: 'Token inválido o expirado' });
+      return res.status(403).json({ 
+        error: 'Token inválido o expirado',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Verificar que el usuario existe en nuestra base de datos
+    const { data: userData, error: dbError } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (dbError || !userData) {
+      return res.status(403).json({ 
+        error: 'Usuario no encontrado',
+        code: 'USER_NOT_FOUND'
+      });
     }
 
     req.user = user;
+    req.userData = userData;
     next();
   } catch (error) {
-    return res.status(403).json({ error: 'Error de autenticación' });
-  }
-}
-
-// Middleware para verificar la API Key
-const apiKeyAuth = (req, res, next) => {
-  try {
-    // Obtener la API Key del header
-    const apiKey = req.headers['x-api-key'];
-    
-    if (!apiKey) {
-      throw createError(
-        StatusCodes.UNAUTHORIZED,
-        'API Key es requerida. Por favor, incluye x-api-key en el header.'
-      );
-    }
-
-    // Verificar si la API Key es válida
-    const validApiKeys = process.env.API_KEYS.split(',').reduce((acc, pair) => {
-      const [clientId, key] = pair.split(':');
-      acc[clientId] = key;
-      return acc;
-    }, {});
-
-    // Buscar el cliente por API Key
-    const clientId = Object.keys(validApiKeys).find(
-      id => validApiKeys[id] === apiKey
-    );
-
-    if (!clientId) {
-      throw createError(
-        StatusCodes.UNAUTHORIZED,
-        'API Key inválida o expirada.'
-      );
-    }
-
-    // Agregar el ID del cliente al request para uso posterior
-    req.clientId = clientId;
-    next();
-  } catch (error) {
-    next(error);
+    console.error('Error en autenticación:', error);
+    return res.status(500).json({ 
+      error: 'Error interno de autenticación',
+      code: 'AUTH_ERROR'
+    });
   }
 };
-
-module.exports = { apiKeyAuth };
 
 module.exports = { authenticateToken };
