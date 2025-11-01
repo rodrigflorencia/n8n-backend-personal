@@ -12,6 +12,7 @@ const { apiLimiter, securityHeaders, validateContentType } = require('./config/s
 const { authenticateToken } = require('./middleware/auth');
 const { demoRateLimit } = require('./middleware/rateLimit');
 const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
+const { registerUser, loginUser } = require('./controllers/auth');
 
 const PORT = process.env.PORT || 3000;
 const app = express();
