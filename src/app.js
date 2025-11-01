@@ -22,7 +22,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? 'https://nexus-auto-mate.lovable.app'
+    ? 'https://consulor-ia.web.app'
     : '*',
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-api-key']
