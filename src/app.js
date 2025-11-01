@@ -4,7 +4,6 @@ const morgan = require('morgan');
 require('dotenv').config();
 const helmet = require('helmet');
 
-
 /***Revisar si va bien
 const winston = require('winston');
 const { apiLimiter, securityHeaders, validateContentType } = require('./config/security');
@@ -13,6 +12,7 @@ const { authenticateToken } = require('./middleware/auth');
 const { demoRateLimit } = require('./middleware/rateLimit');
 const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
 const { registerUser, loginUser } = require('./controllers/auth');
+const invoiceRoutes = require('./routes/invoice.routes');
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -24,7 +24,7 @@ app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? 'https://consulor-ia.web.app'
     : '*',
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-api-key', 'x-demo-token', 'x-client-id', 'x-request-source']
 }));
 
@@ -39,6 +39,11 @@ app.use(morgan('combined', {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+app.use((req, res, next) => {
+  req.clientId = req.headers['x-tenant-id'] || 'anonymous';
+  if (!req.logger) req.logger = console;
+  next();
+});
 
 /** Configuración del logger
 const logger = winston.createLogger({
@@ -68,6 +73,7 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/api/demo/create', createDemoAccess);
+app.use('/api', invoiceRoutes);
 app.use('/api', authenticateToken, demoRateLimit);
 app.post('/api/execute-workflow', executeWorkflow);
 app.get('/api/client-info', getClientInfo);

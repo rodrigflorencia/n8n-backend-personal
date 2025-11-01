@@ -1,5 +1,6 @@
 // backend/middleware/auth.js
 const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -56,3 +57,18 @@ const authenticateToken = async (req, res, next) => {
 };
 
 module.exports = { authenticateToken };
+
+// Generar token de demo por 7 días
+function generateDemoToken(clientId, workflow_interests = ['all']) {
+  const payload = {
+    id: clientId,
+    type: 'demo',
+    workflows: workflow_interests,
+    createdAt: Math.floor(Date.now() / 1000)
+  };
+
+  const secret = process.env.DEMO_JWT_SECRET || process.env.JWT_SECRET || 'change-me';
+  return jwt.sign(payload, secret, { expiresIn: '7d' });
+}
+
+module.exports = { authenticateToken, generateDemoToken };
