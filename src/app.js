@@ -1,77 +1,152 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
-const config = require('./config');
-const invoiceRoutes = require('./routes/invoice.routes');
+require('dotenv').config();
+const helmet = require('helmet');
 
-// Inicializar la aplicación Express
+
+/***Revisar si va bien
+const winston = require('winston');
+const { apiLimiter, securityHeaders, validateContentType } = require('./config/security');
+***/
+const { validateToken  } = require('./middleware/auth');
+const { demoRateLimit } = require('./middleware/rateLimit');
+const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
+
+const PORT = process.env.PORT || 3000;
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(morgan('dev'));
-const axios = require('axios');
+// Security middleware
+//app.use(securityHeaders);
+app.use(helmet());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://nexus-auto-mate.lovable.app'
+    : '*',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-api-key']
+}));
+
+// Logging middleware
+app.use(morgan('combined', { 
+  stream: { 
+    write: (message) => console.log(message.trim()) 
+  } 
+}));
+
+// Parse middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 
-app.use(express.json());
+/** Configuración del logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});*/ 
 
-app.post('/process-invoice', async (req, res) => {
-  const tenant_id = req.headers['x-tenant-id']; // Recibe tenant_id en header
-  const invoiceImageUrl = req.body.invoiceImageUrl;
 
-  if (!tenant_id || !invoiceImageUrl) {
-    return res.status(400).json({ error: 'tenant_id and invoiceImageUrl required' });
-  }
+// Validación de content-type
+//app.use(validateContentType);
 
-  try {
-    // Llamada al webhook de n8n con tenant_id y datos
-    const response = await axios.post('https://tu-n8n-url/webhook/tu-webhook-id', {
-      tenant_id: tenant_id,
-      invoice_image_url: invoiceImageUrl,
-      // otros datos si quieres
-    });
-
-    res.json({ message: 'Invoice sent to processing', n8nResponse: response.data });
-  } catch (error) {
-    res.status(500).json({ error: 'Error calling n8n webhook', details: error.message });
-  }
-});
-
-// Ruta de prueba
-app.get('/', (req, res) => {
+// Ruta de prueba (sin autenticación)
+app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok',
-    message: 'Bienvenido al servicio de procesamiento de facturas',
-    environment: config.environment
+    message: 'Servicio en funcionamiento',
+    timestamp: new Date().toISOString()
   });
 });
 
-// Rutas de la API
-app.use('/api', invoiceRoutes);
+// Public routes (sin autenticación)
+app.post('/api/demo/create', createDemoAccess);
 
-// Manejador de errores 404
+// Aplicar rate limiting a todas las rutas
+//app.use(apiLimiter);
+
+// Aplicar autenticación a las rutas de la API
+
+//app.use('/api', validateToken , demoRateLimit);
+
+// Ejecutar workflow
+//app.post('/api/execute-workflow', executeWorkflow);
+
+// Información del cliente
+//app.get('/api/client-info', getClientInfo);
+
+// Información de workflows disponibles
+/*app.get('/api/workflows', (req, res) => {
+  const N8nClient = require('./utils/n8nClient');
+  const n8nClient = new N8nClient();
+  
+  res.json({
+    available_workflows: n8nClient.getAvailableWorkflows(req.client),
+    client_access: req.client.workflows
+  });
+});*/
+
+
+
+
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: 'Something went wrong processing your request'
+  });
+});
+
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
-    success: false, 
-    error: 'Ruta no encontrada' 
+    error: 'Route not found',
+    available_endpoints: [
+      'POST /api/demo/create',
+      'POST /api/execute-workflow',
+      'GET /api/client-info',
+      'GET /api/workflows'
+    ]
   });
 });
 
 // Manejador de errores global
 app.use((err, req, res, next) => {
-  console.error('Error no manejado:', err);
-  res.status(500).json({ 
-    success: false, 
-    error: 'Error interno del servidor' 
+  logger.error('Error no manejado:', { 
+    error: err.message, 
+    stack: err.stack,
+    url: req.originalUrl,
+    method: req.method,
+    clientId: req.clientId || 'no-autenticado'
+  });
+
+  // Si el error ya tiene un código de estado, usarlo; de lo contrario, 500
+  const statusCode = err.statusCode || 500;
+  
+  res.status(statusCode).json({
+    success: false,
+    error: process.env.NODE_ENV === 'production' && statusCode === 500
+      ? 'Error interno del servidor'
+      : err.message
   });
 });
 
 // Iniciar el servidor
-const PORT = config.port || 3000;
+
+
 app.listen(PORT, () => {
-  console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
-  console.log(`Modo: ${config.environment}`);
+  console.log(`🚀 Nexus AutoMate Backend running on port ${PORT}`);
+  console.log(`📍 Health check: http://localhost:${PORT}/health`);
 });
 
-module.exports = app; // Para pruebas
+
+module.exports = app;
