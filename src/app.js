@@ -66,9 +66,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Public routes (sin autenticación)
 app.post('/api/demo/create', createDemoAccess);
+app.use('/api', validateToken, demoRateLimit);
+app.post('/api/execute-workflow', executeWorkflow);
+app.get('/api/client-info', getClientInfo);
 
+app.post('/api/auth/register', registerUser);
+app.post('/api/auth/login', loginUser);
 // Aplicar rate limiting a todas las rutas
 //app.use(apiLimiter);
 
