@@ -9,7 +9,7 @@ const helmet = require('helmet');
 const winston = require('winston');
 const { apiLimiter, securityHeaders, validateContentType } = require('./config/security');
 ***/
-const { validateToken  } = require('./middleware/auth');
+const { authenticateToken } = require('./middleware/auth');
 const { demoRateLimit } = require('./middleware/rateLimit');
 const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
 
@@ -67,7 +67,7 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/api/demo/create', createDemoAccess);
-app.use('/api', validateToken, demoRateLimit);
+app.use('/api', authenticateToken, demoRateLimit);
 app.post('/api/execute-workflow', executeWorkflow);
 app.get('/api/client-info', getClientInfo);
 
