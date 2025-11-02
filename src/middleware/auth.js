@@ -6,6 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY // Para el backend usamos service key
 );
+const REQUIRE_DB_USER = process.env.REQUIRE_DB_USER === 'true';
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -30,19 +31,31 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    // Verificar que el usuario existe en nuestra base de datos
-    const { data: userData, error: dbError } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    // Verificar que el usuario existe en nuestra base de datos (opcional)
+    let userData = null;
+    if (REQUIRE_DB_USER) {
+      const { data, error: dbError } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (dbError) {
-      console.warn('Aviso: fallo al consultar tabla usuarios:', dbError.message);
+      if (dbError) {
+        // Si se requiere la verificación, advertimos y continuamos con 403 si no existe
+        console.warn('Aviso: fallo al consultar tabla usuarios:', dbError.message);
+      }
+
+      if (!data) {
+        return res.status(403).json({ 
+          error: 'Usuario no encontrado',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+      userData = data;
     }
 
     req.user = user;
-    req.userData = userData || null;
+    req.userData = userData;
     next();
   } catch (error) {
     console.error('Error en autenticación:', error);

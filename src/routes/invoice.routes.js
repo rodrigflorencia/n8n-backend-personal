@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.post('/process-invoice', authenticateToken, async (req, res) => {
   try {
-    const webhookUrl = 'https://n8n-service-la6u.onrender.com/webhook/demo/social-media';
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-service-la6u.onrender.com/webhook/demo/social-media';
 
     const headers = {
       'Content-Type': 'application/json',
@@ -40,13 +40,26 @@ router.post('/process-invoice', authenticateToken, async (req, res) => {
       range
     };
 
-    const upstream = await axios.post(webhookUrl, payload, { headers, timeout: 15000 });
+    const upstream = await axios.post(webhookUrl, payload, { headers, timeout: 20000 });
     return res.status(upstream.status).send(upstream.data);
   } catch (error) {
     if (error.response) {
-      return res.status(error.response.status).send(error.response.data);
+      return res.status(error.response.status).json({
+        error: 'WEBHOOK_RESPONSE_ERROR',
+        status: error.response.status,
+        data: error.response.data
+      });
     }
-    return res.status(502).send('Webhook request failed');
+    if (error.request) {
+      return res.status(502).json({
+        error: 'WEBHOOK_NO_RESPONSE',
+        message: error.code || 'No response from webhook'
+      });
+    }
+    return res.status(502).json({
+      error: 'WEBHOOK_REQUEST_FAILED',
+      message: error.message
+    });
   }
 });
 
