@@ -73,8 +73,8 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/api/demo/create', createDemoAccess);
-app.use('/api', invoiceRoutes);
 app.use('/api', authenticateToken, demoRateLimit);
+app.use('/api', invoiceRoutes);
 app.post('/api/execute-workflow', executeWorkflow);
 app.get('/api/client-info', getClientInfo);
 
