@@ -35,17 +35,14 @@ const authenticateToken = async (req, res, next) => {
       .from('usuarios')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (dbError || !userData) {
-      return res.status(403).json({ 
-        error: 'Usuario no encontrado',
-        code: 'USER_NOT_FOUND'
-      });
+    if (dbError) {
+      console.warn('Aviso: fallo al consultar tabla usuarios:', dbError.message);
     }
 
     req.user = user;
-    req.userData = userData;
+    req.userData = userData || null;
     next();
   } catch (error) {
     console.error('Error en autenticación:', error);
