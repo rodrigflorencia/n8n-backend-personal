@@ -1,6 +1,6 @@
 # Nexus AutoMate Backend (invoice-processor)
 
-Backend en Node.js/Express para ejecutar workflows de n8n con autenticación de usuarios vía Supabase y conexión OAuth de Google. Incluye endpoints para preferencias por usuario (carpeta de Drive, hoja y rango de Sheets), reenvío de payloads a n8n y utilidades para listar workflows disponibles.
+Backend en Node.js/Express para ejecutar _workflows_ con autenticación de usuarios. Incluye _endpoints_ para preferencias para ejecutar _workflows_ .
 
 ## Tabla de contenidos
 
@@ -20,39 +20,37 @@ Backend en Node.js/Express para ejecutar workflows de n8n con autenticación de 
 
 ## Resumen
 
-- **Stack:** Node.js 18+, Express 4, Supabase (Auth + Postgres), n8n, Axios, Helmet, CORS, express-rate-limit, jsonwebtoken.
+- **Stack:** Node.js 18+, Express 4, Axios, Helmet, CORS, _express-rate-limit_, _jsonwebtoken_.
 - **Propósito:**
-  - Conectar usuarios mediante Supabase Auth.
-  - Conectar la cuenta de Google del usuario (OAuth) y guardar tokens en Supabase.
-  - Ejecutar workflows de n8n reenviando el `google_access_token` y las preferencias del usuario (Drive/Sheets).
-- **Estado:** Rutas principales operativas. Rate limiting y headers de seguridad listos (algunos desactivados por defecto). Diagrama y documentación incluidos.
+  - Ejecutar _workflows_ .
+- **Estado:** Rutas principales operativas. Rate _limiting_ y _headers_ de seguridad listos (algunos desactivados por defecto). Diagrama y documentación incluidos.
 
 ## Arquitectura
 
-- **Express API** expone `/api/*` protegido por JWT de Supabase (Bearer), más un `GET /health` público.
+- **Express API** expone `/api/*` protegido por JWT de Supabase (Bearer).
 - **Supabase**:
-  - Auth: validación del token con `supabase.auth.getUser(token)`.
-  - DB: tablas `user_credentials` (tokens de Google) y `user_workflow_prefs` (preferencias por usuario/workflow).
-- **Google OAuth**: intercambio de código por tokens y refresco automático si expiran.
-- **n8n**: recepción del payload con token de Google y preferencias; el workflow llama Drive/Sheets.
-- **Middlewares**: `authenticateToken` (Supabase), `demoRateLimit` (rate limit), `helmet`, `cors`, `morgan` para logs.
+  - Auth: validación del _token_ con `supabase.auth.getUser(token)`.
+  - DB: tablas `user_credentials` (_tokens_ de aplicaciones de terceros) y `user_workflow_prefs` (preferencias por usuario/_workflow_).
+- **Middlewares**: `authenticateToken`, `demoRateLimit` (_rate limit_), `helmet`, `cors`, `morgan` para _logs_.
 
 ## Diagramas
 
 ### Arquitectura (alto nivel)
 
 ```mermaid
-flowchart LR
-    FE[Frontend / Postman] -->|HTTP| API[(Express API)]
-    API -->|Auth (JWT)| SUPA[(Supabase Auth)]
-    API -->|DB| DB[(Supabase Postgres)]
-    API -->|OAuth| GOOGLE[Google OAuth 2.0]
-    API -->|Webhook JSON| N8N[n8n Webhook]
-    N8N -->|APIs| GAPIs[Google Drive / Google Sheets]
+
+
+flowchart TD
+    FE[Frontend] -->|HTTP| API[(Express API)]
+    API -->|Auth JWT| SUPA[(Supabase Auth)]
+    API -->|DB| DB[(Postgres)]
+    API -->|OAuth| OAUTH[OAuth Provider]
+    API -->|Workflow| WF[Workflow Engine]
+    WF -->|APIs| APIS[External APIs]
 
     subgraph DBTables
-      UC[user_credentials]
-      UWP[user_workflow_prefs]
+        UC[user_credentials]
+        UWP[user_workflow_prefs]
     end
 
     DB --> UC
@@ -65,14 +63,14 @@ flowchart LR
 sequenceDiagram
     participant FE as Frontend
     participant API as Backend
-    participant Google as Google OAuth
+    participant Third as Third-party
     participant DB as Supabase (DB)
 
-    FE->>API: GET /api/oauth/google/url (Bearer)
+    FE->>API: [GET /api/oauth/third/url (Bearer)]
     API-->>FE: { auth_url }
-    FE->>Google: Usuario autoriza
-    Google->>API: GET /oauth/google/callback?code&state
-    API->>Google: POST /token (exchange code)
+    FE->>Third: Usuario autoriza
+    Third->>API: GET /oauth/third/callback?code&state
+    API->>Third: POST /token (exchange code)
     API->>DB: upsert user_credentials (access/refresh/expires_at)
     API-->>FE: Redirect éxito (o mensaje)
 ```
@@ -84,15 +82,15 @@ sequenceDiagram
     participant FE as Frontend
     participant API as Backend
     participant DB as Supabase (DB)
-    participant N8n as n8n Webhook
-    participant GAPIs as Google APIs
+    participant Workflow as Workflow
+    participant APIs as APIs
 
     FE->>API: POST /api/process-invoice (Bearer)
     API->>DB: Leer user_credentials (token Google)
     API->>DB: Leer user_workflow_prefs (folder/sheet/range)
-    API->>N8n: POST payload + google_access_token + prefs
-    N8n->>GAPIs: Drive/Sheets
-    N8n-->>API: Resultado
+    API->>Workflow: POST payload + google_access_token + prefs
+    Workflow->>APIs: Drive/Sheets/...
+    Workflow-->>API: Resultado
     API-->>FE: Resultado
 ```
 
@@ -113,8 +111,6 @@ erDiagram
     user_workflow_prefs {
       uuid user_id PK
       text workflow PK
-      text drive_folder_id
-      text spreadsheet_id
       text range
       timestamptz updated_at
     }
@@ -133,49 +129,50 @@ Base URL local: `http://localhost:3000`
 - **Auth de aplicación (Supabase)**
   - `POST /api/auth/register` (ver Nota 1)
     - Body: `{ email, password, name }`
-    - Crea el usuario en Supabase (email confirmado).
+    - Crea el usuario en Supabase (_email_ confirmado).
   - `POST /api/auth/login` (ver Nota 1)
     - Body: `{ email, password }`
     - Respuesta: `{ user, access_token, refresh_token }`
 
-- **Google OAuth**
-  - `GET /api/oauth/google/url` (protegido)
-    - Devuelve `auth_url` de Google para el usuario autenticado.
-  - `GET /oauth/google/callback` (público)
-    - Intercambia `code` por tokens, y los guarda en `user_credentials`.
+- **Third-party OAuth**
+  - `GET /api/oauth/third/url` (protegido)
+    - Devuelve `auth_url` de third-party para el usuario autenticado.
+  - `GET /oauth/third/callback` (público)
+    - Intercambia `code` por _tokens_, y los guarda en `user_credentials`.
     - Redirige si existen `OAUTH_SUCCESS_REDIRECT` / `OAUTH_FAIL_REDIRECT`.
-  - `GET /api/oauth/google/status` (protegido)
-    - `{ connected: boolean }` si hay token disponible/refrescable.
+  - `GET /api/oauth/third/status` (protegido)
+    - `{ connected: boolean }` si hay _token_ disponible/refrescable.
 
 - **Workflows**
   - `GET /api/workflows` (protegido)
-    - Lista workflows disponibles para el usuario. Incluye si tiene Google conectado y sus preferencias del workflow de facturas.
+    - Lista _workflows_ disponibles para el usuario. Incluye si tiene _third-party_ conectado y sus preferencias del _workflow_ de facturas.
 
 - **Preferencias (workflow de facturas)**
   - `GET /api/invoice/prefs` (protegido)
-    - Respuesta: `{ drive_folder_id, spreadsheet_id, range } | { nulls }`
+    - Respuesta: `{ ... } | { nulls }`
   - `POST /api/invoice/prefs` (protegido)
-    - Body: `{ drive_folder_id?, spreadsheet_id?, range? }`
+    - Body: `{ ... }`
     - Upsert en `user_workflow_prefs` para `workflow = 'invoice'`.
 
 - **Ejecución de workflow de facturas**
   - `POST /api/process-invoice` (protegido)
     - Headers reenviados a n8n: `X-Demo-Token` (opcional), `Content-Type: application/json`.
-    - Toma `drive_folder_id`, `spreadsheet_id`, `range` del body o, si faltan, de `user_workflow_prefs`.
-    - Adjunta `google_access_token` del usuario.
-    - Forward a `N8N_WEBHOOK_URL` o (por defecto) `https://n8n-service-la6u.onrender.com/webhook/demo/social-media`.
+    - Toma el body o, si faltan, de `user_workflow_prefs`.
+    - Adjunta `third_access_token` del usuario.
+    - Forward a `WEBHOOK_URL` .
     - Errores:
-      - `412 GOOGLE_NOT_CONNECTED` si no hay conexión Google.
-      - `502 WEBHOOK_*` para problemas con n8n.
+      - `412 THIRD_NOT_CONNECTED` si no hay conexión third-party.
+      - `502 WEBHOOK_*` para problemas con automatizaciones.
 
 - **Demo (experimental)**
   - `POST /api/demo/create` (público)
-    - Crea un demo token y devuelve workflows disponibles. Pensado para experimentación con `N8nClient`.
+    - Crea un demo token y devuelve _workflows_ disponibles. Pensado para experimentación con `WFClient`.
   - `POST /api/execute-workflow` y `GET /api/client-info` (protegidos)
-    - Integración con `N8nClient` basada en un `req.client` (ver Nota 2).
+    - Integración con `WFClient` basada en un `req.client` (ver Nota 2).
 
-> Nota 1: Por el middleware global `authenticateToken` aplicado a `/api/*`, en la configuración actual estos endpoints también requieren token. Si necesitas exponerlos públicos, mueve estas rutas fuera de `/api` o exclúyelas del middleware.
-> Nota 2: Las rutas de demo (`execute-workflow`, `client-info`) esperan `req.client`; no existe un middleware actual que lo inyecte desde el demo token. Considéralo al usarlas o agrega el middleware correspondiente.
+> Nota 1: Por el _middleware_ global `authenticateToken` aplicado a `/api/*`, en la configuración actual estos _endpoints_ también requieren _token_. Si necesitas exponerlos públicos, mueve estas rutas fuera de `/api` o exclúyelas del _middleware_.
+
+> Nota 2: Las rutas de **demo** (`execute-workflow`, `client-info`) esperan `req.client`; no existe un _middleware_ actual que lo inyecte desde el **demo** _token_. Considéralo al usarlas o agrega el _middleware_ correspondiente.
 
 ## Variables de entorno
 
@@ -194,19 +191,14 @@ SUPABASE_SERVICE_ROLE_KEY=...
 JWT_SECRET=change-me
 DEMO_JWT_SECRET=change-me
 
-# Google OAuth
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-# Opcional: si no se define, se usa {BASE_URL}/oauth/google/callback
-GOOGLE_REDIRECT_URI=https://tu-backend.com/oauth/google/callback
 
 # Redirecciones post OAuth (opcionales)
 OAUTH_SUCCESS_REDIRECT=https://tu-front.com/success
 OAUTH_FAIL_REDIRECT=https://tu-front.com/fail
 
 # n8n
-N8N_WEBHOOK_URL=https://.../webhook/demo/social-media    # usado por /api/process-invoice
-N8N_WEBHOOK_BASE_URL=https://.../webhook                  # usado por N8nClient
+WEBHOOK_URL=https://.../webhook/demo/social-media    # usado por /api/process-invoice
+WEBHOOK_BASE_URL=https://.../webhook                  # usado por WFClient
 DEMO_TOKEN_SOCIAL=...
 DEMO_TOKEN_OCR=...
 DEMO_TOKEN_CONTRACTS=...
@@ -224,7 +216,7 @@ Permisos de CORS: en producción está permitido `https://consulor-ia.web.app`; 
 ```text
 src/
   app.js                      # Bootstrap Express y rutas
-  config.js                   # PORT, N8N_WEBHOOK_URL, NODE_ENV
+  config.js                   # PORT,  NODE_ENV
   config/security.js          # apiLimiter, securityHeaders, validateContentType
   controllers/
     auth.js                   # Register/Login via Supabase
@@ -234,14 +226,15 @@ src/
     rateLimit.js              # demoRateLimit por cliente
   routes/
     invoice.routes.js         # /process-invoice, /invoice/prefs
-    oauth.routes.js           # /api/oauth/google/* y /oauth/google/callback
+    oauth.routes.js           
+    callback
     workflows.routes.js       # /api/workflows
     protected.js              # Ejemplo de ruta protegida genérica
   services/
-    googleOAuth.js            # buildAuthUrl, exchangeCode, getUserAccessToken
-    preferences.js            # getInvoicePrefs, upsertInvoicePrefs
+    thirdOAuth.js            # buildAuthUrl, exchangeCode, getUserAccessToken
+    preferences.js            
   utils/
-    n8nClient.js              # Ejecutor de workflows demo (por tipo)
+    wfClient.js              # Ejecutor de workflows demo (por tipo)
 ```
 
 ## Instalación y ejecución
@@ -275,23 +268,6 @@ Health check: `GET /health`
 - **Especificación fuente**: `docs/openapi.yaml`
 
 Para modificar o extender la documentación, edita `docs/openapi.yaml`. La app carga el YAML al iniciar y sirve Swagger UI en `/docs`.
-
-## Flujos principales
-
-- **Conectar Google**
-  1. `GET /api/oauth/google/url` (Bearer) → devuelve `auth_url`.
-  2. Redirigir al usuario a `auth_url`.
-  3. Google redirige a `GET /oauth/google/callback?code&state`.
-  4. Se guardan tokens en `user_credentials`. `GET /api/oauth/google/status` → `{ connected: true }`.
-
-- **Configurar preferencias**
-  - `POST /api/invoice/prefs` (Bearer) con `{ drive_folder_id, spreadsheet_id, range }`.
-  - `GET /api/invoice/prefs` para leerlas.
-
-- **Ejecutar workflow de facturas**
-  - `POST /api/process-invoice` (Bearer) con el payload de tu caso de uso.
-  - El backend adjunta `google_access_token` y completa campos faltantes con preferencias guardadas.
-  - Reenvía a n8n (`N8N_WEBHOOK_URL`). n8n llama Drive/Sheets.
 
 ### Ejemplos (fetch)
 
@@ -327,7 +303,7 @@ await fetch('/api/process-invoice', {
 
 ## Esquema de base de datos
 
-SQL recomendado para tablas usadas por el backend:
+SQL recomendado para tablas usadas por el _backend_:
 
 ```sql
 create table if not exists public.user_credentials (
@@ -344,8 +320,6 @@ create table if not exists public.user_credentials (
 create table if not exists public.user_workflow_prefs (
   user_id uuid not null,
   workflow text not null,
-  drive_folder_id text,
-  spreadsheet_id text,
   range text,
   updated_at timestamptz default now(),
   primary key (user_id, workflow)
@@ -361,13 +335,12 @@ create table if not exists public.user_workflow_prefs (
 
 ## Errores comunes
 
-- `MISSING_TOKEN` / `INVALID_TOKEN`: falta o token inválido de Supabase.
+- `MISSING_TOKEN` / `INVALID_TOKEN`: falta o _token_ inválido de Supabase.
 - `GOOGLE_NOT_CONNECTED` (412): el usuario no conectó Google.
-- `WEBHOOK_NO_RESPONSE` / `WEBHOOK_RESPONSE_ERROR` / `WEBHOOK_REQUEST_FAILED`: problemas al llamar al webhook de n8n.
+- `WEBHOOK_NO_RESPONSE` / `WEBHOOK_RESPONSE_ERROR` / `WEBHOOK_REQUEST_FAILED`: problemas al llamar al _webhook_.
 - `Rate limit exceeded (429)`: excedido el límite configurado.
 
 ## Notas y próximos pasos
 
-- Si deseas que `POST /api/auth/register` y `POST /api/auth/login` sean públicos, muévelos fuera del prefijo `/api` o exclúyelos del middleware global de autenticación.
-- Para habilitar rutas de demo (`/api/execute-workflow`, `/api/client-info`): agrega un middleware que valide el demo token (`DEMO_JWT_SECRET`) e inyecte `req.client` con `{ id, type, workflows, createdAt, expiresAt }`.
-- Considera exportar un OpenAPI/Swagger para contratos.
+- Si deseas que `POST /api/auth/register` y `POST /api/auth/login` sean públicos, muévelos fuera del prefijo `/api` o exclúyelos del _middleware_ global de autenticación.
+- Para habilitar rutas de demo (`/api/execute-workflow`, `/api/client-info`): agrega un _middleware_ que valide el demo _token_ (`DEMO_JWT_SECRET`) e inyecte `req.client` con `{ id, type, workflows, createdAt, expiresAt }`.
