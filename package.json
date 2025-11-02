@@ -22,7 +22,9 @@
         "http-status-codes": "^2.2.0",
         "jsonwebtoken": "^9.0.2",
         "morgan": "^1.10.1",
-        "winston": "^3.11.0"
+        "swagger-ui-express": "^5.0.1",
+        "winston": "^3.11.0",
+        "yamljs": "^0.3.0"
     },
     "devDependencies": {
         "nodemon": "^3.0.1"

@@ -4,6 +4,19 @@ const morgan = require('morgan');
 require('dotenv').config();
 const helmet = require('helmet');
 
+const swaggerUi = require('swagger-ui-express');
+const YAML = require('yamljs');
+const path = require('path');
+
+const openapiPath = path.join(__dirname, '..', 'docs', 'openapi.yaml');
+let openapiDocument;
+try {
+  openapiDocument = YAML.load(openapiPath);
+} catch (e) {
+  console.error('Failed to load OpenAPI spec:', e.message);
+  openapiDocument = { openapi: '3.0.0', info: { title: 'API', version: '0.0.0' } };
+}
+
 /***Revisar si va bien
 const winston = require('winston');
 const { apiLimiter, securityHeaders, validateContentType } = require('./config/security');
@@ -73,6 +86,10 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// OpenAPI/Swagger docs
+app.get('/openapi.json', (req, res) => res.json(openapiDocument));
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiDocument));
 
 app.post('/api/demo/create', createDemoAccess);
 app.use('/api', authenticateToken, demoRateLimit);

@@ -1,0 +1,441 @@
+openapi: 3.0.3
+info:
+  title: Nexus AutoMate Backend API
+  version: "1.0.0"
+  description: |
+    API para ejecutar workflows de n8n con autenticación vía Supabase y conexión OAuth de Google.
+    Incluye endpoints para preferencias por usuario (Drive/Sheets), OAuth y utilidades de demo.
+servers:
+  - url: http://localhost:3000
+    description: Servidor local
+
+tags:
+  - name: System
+    description: Endpoints de sistema
+  - name: Auth
+    description: Registro y login de usuarios (Supabase)
+  - name: OAuth
+    description: Conexión OAuth con Google
+  - name: Invoice
+    description: Preferencias y ejecución de workflow de facturas
+  - name: Workflows
+    description: Listado de workflows disponibles para el usuario
+  - name: Demo
+    description: Endpoints de acceso demo (experimentales)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    DemoTokenHeader:
+      name: X-Demo-Token
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Token opcional de demo a reenviar hacia n8n
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        message: { type: string }
+        timestamp: { type: string, format: date-time }
+    AuthRegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        name: { type: string }
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    AuthLoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        user:
+          type: object
+          description: Usuario de Supabase
+        access_token: { type: string }
+        refresh_token: { type: string }
+    OAuthUrlResponse:
+      type: object
+      properties:
+        auth_url: { type: string }
+      required: [auth_url]
+    OAuthStatusResponse:
+      type: object
+      properties:
+        connected: { type: boolean }
+      required: [connected]
+    WorkflowPrefs:
+      type: object
+      properties:
+        drive_folder_id:
+          type: string
+          nullable: true
+        spreadsheet_id:
+          type: string
+          nullable: true
+        range:
+          type: string
+          nullable: true
+    WorkflowListItem:
+      type: object
+      properties:
+        key: { type: string, example: invoice_ocr }
+        name: { type: string }
+        description: { type: string }
+        requires:
+          type: array
+          items: { type: string }
+        connected: { type: boolean }
+        prefs:
+          $ref: '#/components/schemas/WorkflowPrefs'
+        actions:
+          type: object
+          additionalProperties: true
+          nullable: true
+    WorkflowListResponse:
+      type: object
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowListItem'
+    ProcessInvoiceRequest:
+      type: object
+      properties:
+        platform: { type: string, example: twitter }
+        content: { type: string }
+        drive_folder_id: { type: string }
+        spreadsheet_id: { type: string }
+        range: { type: string }
+      additionalProperties: true
+    DemoCreateRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        company: { type: string }
+        workflow_interests:
+          type: array
+          items: { type: string }
+      required: [email]
+    DemoCreateResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        demo_token: { type: string }
+        client_id: { type: string }
+        expires_in: { type: string, example: 7 days }
+        available_workflows:
+          type: array
+          items: { type: object }
+        instructions: { type: string }
+    ExecuteWorkflowRequest:
+      type: object
+      properties:
+        workflow_type: { type: string, enum: [social_media, invoice_ocr, contracts, lead_generation] }
+        data:
+          type: object
+          additionalProperties: true
+      required: [workflow_type]
+    ExecuteWorkflowResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: { type: object }
+        workflow_type: { type: string }
+        client_id: { type: string }
+        execution_time: { type: string, format: date-time }
+    ClientInfoResponse:
+      type: object
+      properties:
+        client_id: { type: string }
+        type: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        available_workflows:
+          type: array
+          items: { type: object }
+        usage_info:
+          type: object
+          properties:
+            demo_period_remaining: { type: number }
+            workflows_accessible: { type: integer }
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Verificación de salud del servicio
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar usuario en Supabase
+      description: "Nota: En la implementación actual puede requerir token por el middleware global de /api."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  user: { type: object }
+                  message: { type: string }
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login de usuario (Supabase)
+      description: "Nota: En la implementación actual puede requerir token por el middleware global de /api."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+      responses:
+        '200':
+          description: Sesión iniciada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthLoginResponse'
+        '400':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/oauth/google/url:
+    get:
+      tags: [OAuth]
+      summary: Obtener URL de autorización de Google
+      responses:
+        '200':
+          description: URL generada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthUrlResponse'
+  /oauth/google/callback:
+    get:
+      tags: [OAuth]
+      summary: Callback público de Google OAuth
+      security: []
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Conexión realizada o redirección
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/oauth/google/status:
+    get:
+      tags: [OAuth]
+      summary: Estado de la conexión Google del usuario
+      responses:
+        '200':
+          description: Estado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStatusResponse'
+  /api/workflows:
+    get:
+      tags: [Workflows]
+      summary: Listar workflows disponibles para el usuario autenticado
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowListResponse'
+  /api/invoice/prefs:
+    get:
+      tags: [Invoice]
+      summary: Obtener preferencias del workflow de facturas
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowPrefs'
+    post:
+      tags: [Invoice]
+      summary: Guardar/actualizar preferencias del workflow de facturas
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowPrefs'
+      responses:
+        '200':
+          description: Guardado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+        '500':
+          description: Error al guardar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/process-invoice:
+    post:
+      tags: [Invoice]
+      summary: Ejecutar workflow de facturas (reenviar a n8n)
+      parameters:
+        - $ref: '#/components/parameters/DemoTokenHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessInvoiceRequest'
+      responses:
+        '200':
+          description: Respuesta proxy de n8n
+          content:
+            application/json:
+              schema:
+                type: object
+        '412':
+          description: Google no conectado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Error al contactar webhook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/demo/create:
+    post:
+      tags: [Demo]
+      summary: Crear acceso de demo (público)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DemoCreateRequest'
+      responses:
+        '200':
+          description: Token y workflows disponibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemoCreateResponse'
+  /api/execute-workflow:
+    post:
+      tags: [Demo]
+      summary: Ejecutar workflow (requiere req.client)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteWorkflowRequest'
+      responses:
+        '200':
+          description: Resultado de ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteWorkflowResponse'
+        '401':
+          description: Demo expirada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Acceso denegado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error al ejecutar el workflow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/client-info:
+    get:
+      tags: [Demo]
+      summary: Información del cliente demo (requiere req.client)
+      responses:
+        '200':
+          description: Información del cliente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientInfoResponse'
