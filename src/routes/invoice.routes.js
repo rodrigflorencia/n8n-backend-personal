@@ -1,9 +1,10 @@
 const express = require('express');
 const axios = require('axios');
+const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/process-invoice', async (req, res) => {
+router.post('/process-invoice', authenticateToken, async (req, res) => {
   try {
     const webhookUrl = 'https://n8n-service-la6u.onrender.com/webhook/demo/social-media';
 
