@@ -43,72 +43,75 @@ router.post('/process-invoice',
       const tenantId = req.headers['x-tenant-id'];
       const { invoiceImageUrl } = req.body;
       const clientId = req.clientId; // Obtenido del middleware de autenticación
+      const strictCheck = process.env.STRICT_URL_CHECK === 'true';
 
-      // Validar que la URL sea accesible (HEAD -> fallback GET con Range)
-      try {
-        const tryHead = async () => {
-          return axios.head(invoiceImageUrl, {
-            timeout: 5000,
-            headers: {
-              'User-Agent': 'InvoiceProcessor/1.0',
-              'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
-            },
-            validateStatus: (s) => s >= 200 && s < 400
-          });
-        };
-
-        const tryGetHeaders = async () => {
-          const resp = await axios.get(invoiceImageUrl, {
-            timeout: 7000,
-            headers: {
-              'User-Agent': 'InvoiceProcessor/1.0',
-              'Range': 'bytes=0-0',
-              'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
-            },
-            responseType: 'stream',
-            maxBodyLength: 1024 * 1024,
-            validateStatus: (s) => s >= 200 && s < 400
-          });
-          if (resp.data && typeof resp.data.destroy === 'function') {
-            // Liberar el stream inmediatamente; sólo necesitamos los headers
-            resp.data.destroy();
-          }
-          return resp;
-        };
-
-        let response;
+      // Validar que la URL sea accesible (opcional). Si STRICT_URL_CHECK === 'true', forzar verificación remota.
+      if (strictCheck) {
         try {
-          response = await tryHead();
-        } catch (e) {
-          response = null;
-        }
-        if (!response || !response.headers || !response.headers['content-type']) {
+          const tryHead = async () => {
+            return axios.head(invoiceImageUrl, {
+              timeout: 5000,
+              headers: {
+                'User-Agent': 'InvoiceProcessor/1.0',
+                'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
+              },
+              validateStatus: () => true // queremos leer headers aunque sea 4xx
+            });
+          };
+
+          const tryGetHeaders = async () => {
+            const resp = await axios.get(invoiceImageUrl, {
+              timeout: 7000,
+              headers: {
+                'User-Agent': 'InvoiceProcessor/1.0',
+                'Range': 'bytes=0-0',
+                'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
+              },
+              responseType: 'stream',
+              maxBodyLength: 1024 * 1024,
+              validateStatus: () => true
+            });
+            if (resp.data && typeof resp.data.destroy === 'function') {
+              // Liberar el stream inmediatamente; sólo necesitamos los headers
+              resp.data.destroy();
+            }
+            return resp;
+          };
+
+          let response;
           try {
-            response = await tryGetHeaders();
-          } catch (e2) {
+            response = await tryHead();
+          } catch (e) {
             response = null;
           }
-        }
+          if (!response || !response.headers || !response.headers['content-type']) {
+            try {
+              response = await tryGetHeaders();
+            } catch (e2) {
+              response = null;
+            }
+          }
 
-        if (!response || !response.headers) {
+          if (!response || !response.headers) {
+            return next(createError(
+              StatusCodes.BAD_REQUEST,
+              'No se pudo acceder a la URL proporcionada. Por favor, verifica que sea correcta y esté accesible.'
+            ));
+          }
+
+          const contentType = response.headers['content-type'] || '';
+          if (!contentType.match(/(image\/?|application\/pdf)/)) {
+            return next(createError(
+              StatusCodes.BAD_REQUEST,
+              'La URL no apunta a un archivo de imagen o PDF válido'
+            ));
+          }
+        } catch (error) {
           return next(createError(
             StatusCodes.BAD_REQUEST,
             'No se pudo acceder a la URL proporcionada. Por favor, verifica que sea correcta y esté accesible.'
           ));
         }
-
-        const contentType = response.headers['content-type'] || '';
-        if (!contentType.match(/(image\/?|application\/pdf)/)) {
-          return next(createError(
-            StatusCodes.BAD_REQUEST,
-            'La URL no apunta a un archivo de imagen o PDF válido'
-          ));
-        }
-      } catch (error) {
-        return next(createError(
-          StatusCodes.BAD_REQUEST,
-          'No se pudo acceder a la URL proporcionada. Por favor, verifica que sea correcta y esté accesible.'
-        ));
       }
 
       // Enviar a n8n
