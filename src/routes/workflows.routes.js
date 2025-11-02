@@ -1,12 +1,11 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
 const { getUserAccessToken } = require('../services/googleOAuth');
 const { getInvoicePrefs } = require('../services/preferences');
 
 const router = express.Router();
 
 // Lista los workflows disponibles para el usuario autenticado
-router.get('/workflows', authenticateToken, async (req, res) => {
+router.get('/workflows', async (req, res) => {
   try {
     const userId = req.user.id;
 

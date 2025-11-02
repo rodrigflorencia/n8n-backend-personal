@@ -1,5 +1,4 @@
 const express = require('express');
-const { authenticateToken } = require('../middleware/auth');
 const { buildAuthUrl, exchangeCode, getUserAccessToken } = require('../services/googleOAuth');
 
 const router = express.Router();
@@ -11,7 +10,7 @@ function getBaseUrl(req) {
 }
 
 // 1) Obtener URL de autorización de Google (usuario logueado)
-router.get('/api/oauth/google/url', authenticateToken, async (req, res) => {
+router.get('/api/oauth/google/url', async (req, res) => {
   try {
     const baseUrl = getBaseUrl(req);
     const authUrl = buildAuthUrl(baseUrl, req.user.id);
@@ -44,7 +43,7 @@ router.get('/oauth/google/callback', async (req, res) => {
 });
 
 // 3) Estado de conexión (usuario logueado)
-router.get('/api/oauth/google/status', authenticateToken, async (req, res) => {
+router.get('/api/oauth/google/status', async (req, res) => {
   try {
     const token = await getUserAccessToken(req.user.id);
     res.json({ connected: !!token });

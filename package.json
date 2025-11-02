@@ -6,7 +6,9 @@
     "scripts": {
         "start": "node src/app.js",
         "dev": "nodemon src/app.js",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "verify": "node scripts/verify/run.js",
+        "verify:start": "node scripts/verify/start-and-verify.js"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.78.0",

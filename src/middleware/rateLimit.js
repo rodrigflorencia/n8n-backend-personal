@@ -7,7 +7,7 @@ const createClientRateLimit = (windowMs = 15 * 60 * 1000, max = 50) => {
     max,
     keyGenerator: (req) => {
       // Usar client ID del JWT si está disponible
-      return req.client?.id || req.ip;
+      return req.client?.id || req.user?.id || req.ip;
     },
     message: {
       error: "Too many requests",
@@ -35,9 +35,8 @@ const createClientRateLimit = (windowMs = 15 * 60 * 1000, max = 50) => {
 };
 
 // Rate limiting específico para demos
-const demoRateLimit = createClientRateLimit(
-  process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000, // 15 minutos
-  process.env.RATE_LIMIT_MAX_REQUESTS || 10 // 10 requests por demo client
-);
+const demoWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000; // 15 minutos
+const demoMax = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 10; // 10 requests por demo client
+const demoRateLimit = createClientRateLimit(demoWindowMs, demoMax);
 
 module.exports = { createClientRateLimit, demoRateLimit };

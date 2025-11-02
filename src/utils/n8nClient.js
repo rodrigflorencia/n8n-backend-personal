@@ -99,20 +99,18 @@ class N8nClient {
   // Obtener workflows disponibles para el cliente
   getAvailableWorkflows(clientInfo) {
     const allWorkflows = Object.keys(this.demoTokens);
-    
+    const toPublic = (type) => {
+      const cfg = this.getWorkflowConfig(type) || {};
+      return { type, description: cfg.description };
+    };
+
     if (!clientInfo.workflows || clientInfo.workflows.includes('all')) {
-      return allWorkflows.map(type => ({
-        type,
-        ...this.getWorkflowConfig(type)
-      }));
+      return allWorkflows.map(toPublic);
     }
 
     return clientInfo.workflows
       .filter(type => allWorkflows.includes(type))
-      .map(type => ({
-        type,
-        ...this.getWorkflowConfig(type)
-      }));
+      .map(toPublic);
   }
 }
 

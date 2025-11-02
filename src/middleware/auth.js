@@ -66,6 +66,44 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+const attachDemoClient = (req, res, next) => {
+  try {
+    const headerToken = req.header('x-demo-token') || req.header('X-Demo-Token');
+    if (headerToken) {
+      const secret = process.env.DEMO_JWT_SECRET || process.env.JWT_SECRET || 'change-me';
+      try {
+        const decoded = jwt.verify(headerToken, secret);
+        req.client = {
+          id: decoded.id || 'demo',
+          type: decoded.type || 'demo',
+          workflows: Array.isArray(decoded.workflows) ? decoded.workflows : ['all'],
+          createdAt: decoded.createdAt || Math.floor(Date.now() / 1000),
+          expiresAt: decoded.exp || null
+        };
+      } catch (_) {
+        req.client = {
+          id: req.user?.id || 'anonymous',
+          type: req.user ? 'user' : 'anonymous',
+          workflows: ['all'],
+          createdAt: Math.floor(Date.now() / 1000),
+          expiresAt: null
+        };
+      }
+    } else {
+      req.client = {
+        id: req.user?.id || 'anonymous',
+        type: req.user ? 'user' : 'anonymous',
+        workflows: ['all'],
+        createdAt: Math.floor(Date.now() / 1000),
+        expiresAt: null
+      };
+    }
+    next();
+  } catch (e) {
+    next(e);
+  }
+};
+
 // exports at end of file
 
 // Generar token de demo por 7 días
@@ -81,4 +119,4 @@ function generateDemoToken(clientId, workflow_interests = ['all']) {
   return jwt.sign(payload, secret, { expiresIn: '7d' });
 }
 
-module.exports = { authenticateToken, generateDemoToken };
+module.exports = { authenticateToken, generateDemoToken, attachDemoClient };

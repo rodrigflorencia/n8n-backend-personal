@@ -1,12 +1,11 @@
 const express = require('express');
 const axios = require('axios');
-const { authenticateToken } = require('../middleware/auth');
 const { getUserAccessToken } = require('../services/googleOAuth');
 const { getInvoicePrefs, upsertInvoicePrefs } = require('../services/preferences');
 
 const router = express.Router();
 
-router.post('/process-invoice', authenticateToken, async (req, res) => {
+router.post('/process-invoice', async (req, res) => {
   try {
     const webhookUrl = process.env.N8N_WEBHOOK_URL || 'https://n8n-service-la6u.onrender.com/webhook/demo/social-media';
 
@@ -64,7 +63,7 @@ router.post('/process-invoice', authenticateToken, async (req, res) => {
 });
 
 // Leer preferencias del workflow de facturas
-router.get('/invoice/prefs', authenticateToken, async (req, res) => {
+router.get('/invoice/prefs', async (req, res) => {
   try {
     const prefs = await getInvoicePrefs(req.user.id);
     return res.json({
@@ -78,7 +77,7 @@ router.get('/invoice/prefs', authenticateToken, async (req, res) => {
 });
 
 // Guardar/actualizar preferencias del workflow de facturas
-router.post('/invoice/prefs', authenticateToken, async (req, res) => {
+router.post('/invoice/prefs', async (req, res) => {
   try {
     const { drive_folder_id, spreadsheet_id, range } = req.body;
     await upsertInvoicePrefs(req.user.id, { drive_folder_id, spreadsheet_id, range });

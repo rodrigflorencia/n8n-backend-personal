@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const swaggerUi = require('swagger-ui-express');
 const YAML = require('yamljs');
 const path = require('path');
+const logger = require('./middleware/logger');
 
 const openapiPath = path.join(__dirname, '..', 'docs', 'openapi.yaml');
 let openapiDocument;
@@ -21,7 +22,7 @@ try {
 const winston = require('winston');
 const { apiLimiter, securityHeaders, validateContentType } = require('./config/security');
 ***/
-const { authenticateToken } = require('./middleware/auth');
+const { authenticateToken, attachDemoClient } = require('./middleware/auth');
 const { demoRateLimit } = require('./middleware/rateLimit');
 const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
 const { registerUser, loginUser } = require('./controllers/auth');
@@ -46,7 +47,7 @@ app.use(cors({
 // Logging middleware
 app.use(morgan('combined', { 
   stream: { 
-    write: (message) => console.log(message.trim()) 
+    write: (message) => logger.info(message.trim()) 
   } 
 }));
 
@@ -56,7 +57,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use((req, res, next) => {
   req.clientId = req.headers['x-tenant-id'] || 'anonymous';
-  if (!req.logger) req.logger = console;
+  if (!req.logger) req.logger = logger;
   next();
 });
 
@@ -92,7 +93,10 @@ app.get('/openapi.json', (req, res) => res.json(openapiDocument));
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiDocument));
 
 app.post('/api/demo/create', createDemoAccess);
-app.use('/api', authenticateToken, demoRateLimit);
+// Auth public endpoints must come before the global '/api' auth middleware
+app.post('/api/auth/register', registerUser);
+app.post('/api/auth/login', loginUser);
+app.use('/api', authenticateToken, attachDemoClient, demoRateLimit);
 app.use('/api', invoiceRoutes);
 // Rutas OAuth: '/api/oauth/*' requieren auth a nivel de ruta o por este middleware global.
 // '/oauth/google/callback' es pública.
@@ -101,8 +105,6 @@ app.use('/api', workflowsRoutes);
 app.post('/api/execute-workflow', executeWorkflow);
 app.get('/api/client-info', getClientInfo);
 
-app.post('/api/auth/register', registerUser);
-app.post('/api/auth/login', loginUser);
 // Aplicar rate limiting a todas las rutas
 //app.use(apiLimiter);
 
@@ -130,18 +132,6 @@ app.post('/api/auth/login', loginUser);
 
 
 
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  const status = err.status || err.statusCode || 500;
-  if (status >= 500) {
-    console.error('Unhandled error:', err);
-  }
-  res.status(status).json({ 
-    error: status >= 500 ? 'Internal server error' : err.message,
-    message: status >= 500 ? 'Something went wrong processing your request' : err.message
-  });
-});
 
 // 404 handler
 app.use((req, res) => {
