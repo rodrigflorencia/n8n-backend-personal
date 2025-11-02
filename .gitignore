@@ -1,5 +1,6 @@
 # Dependencias
 node_modules/
+temp/
 
 # Variables de entorno
 .env
