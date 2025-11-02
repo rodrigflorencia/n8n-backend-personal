@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.post('/process-invoice', async (req, res) => {
   try {
-    const webhookUrl = 'https://n8n-service-la6u.onrender.com/webhook-test/demo/social-media';
+    const webhookUrl = 'https://n8n-service-la6u.onrender.com/webhook/demo/social-media';
 
     const headers = {
       'Content-Type': 'application/json',
