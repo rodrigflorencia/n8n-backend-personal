@@ -36,13 +36,12 @@ const validateTenantId = (req, res, next) => {
 
 // Endpoint para procesar facturas
 router.post('/process-invoice', 
-  validateRequest,
-  validateTenantId,
+
   async (req, res, next) => {
     try {
-      const tenantId = req.headers['x-tenant-id'];
+   
       const { invoiceImageUrl } = req.body;
-      const clientId = req.clientId; // Obtenido del middleware de autenticación
+   
       const strictCheck = process.env.STRICT_URL_CHECK === 'true';
 
       // Validar que la URL sea accesible (opcional). Si STRICT_URL_CHECK === 'true', forzar verificación remota.
@@ -53,7 +52,7 @@ router.post('/process-invoice',
               timeout: 5000,
               headers: {
                 'User-Agent': 'InvoiceProcessor/1.0',
-                'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
+             
               },
               validateStatus: () => true // queremos leer headers aunque sea 4xx
             });
@@ -64,8 +63,6 @@ router.post('/process-invoice',
               timeout: 7000,
               headers: {
                 'User-Agent': 'InvoiceProcessor/1.0',
-                'Range': 'bytes=0-0',
-                'Accept': 'image/*,application/pdf;q=0.9,*/*;q=0.1'
               },
               responseType: 'stream',
               maxBodyLength: 1024 * 1024,
@@ -116,10 +113,7 @@ router.post('/process-invoice',
 
       // Enviar a n8n
       const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL, {
-        tenant_id: tenantId,
-        client_id: clientId,
-        invoice_image_url: invoiceImageUrl,
-        timestamp: new Date().toISOString()
+        
       }, {
         headers: {
           'Content-Type': 'application/json',
