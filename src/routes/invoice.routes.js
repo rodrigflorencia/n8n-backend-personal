@@ -12,5 +12,5 @@ const validateRequest = [
 // Endpoint para procesar facturas
 router.post('/process-invoice', validateRequest, async (req, res) => {
   try {
-    const tenantId = req.headers['x-tenant-id'];
     const { invoiceImageUrl } = req.body;
+  }}
