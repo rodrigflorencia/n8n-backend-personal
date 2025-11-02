@@ -53,7 +53,7 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticateToken };
+// exports at end of file
 
 // Generar token de demo por 7 días
 function generateDemoToken(clientId, workflow_interests = ['all']) {

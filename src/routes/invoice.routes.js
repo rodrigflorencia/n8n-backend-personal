@@ -1,6 +1,8 @@
 const express = require('express');
 const axios = require('axios');
 const { authenticateToken } = require('../middleware/auth');
+const { getUserAccessToken } = require('../services/googleOAuth');
+const { getInvoicePrefs, upsertInvoicePrefs } = require('../services/preferences');
 
 const router = express.Router();
 
@@ -16,7 +18,27 @@ router.post('/process-invoice', authenticateToken, async (req, res) => {
     const demoToken = req.header('x-demo-token') || req.header('X-Demo-Token');
     if (demoToken) headers['X-Demo-Token'] = demoToken;
 
-    const payload = { ...req.body };
+    const googleAccessToken = await getUserAccessToken(req.user.id);
+    if (!googleAccessToken) {
+      return res.status(412).json({
+        error: 'GOOGLE_NOT_CONNECTED',
+        message: 'Conecta tu cuenta de Google para ejecutar este workflow.'
+      });
+    }
+
+    // Preferencias: tomar del body o de las prefs guardadas
+    const prefs = await getInvoicePrefs(req.user.id);
+    const drive_folder_id = req.body.drive_folder_id ?? prefs?.drive_folder_id ?? null;
+    const spreadsheet_id = req.body.spreadsheet_id ?? prefs?.spreadsheet_id ?? null;
+    const range = req.body.range ?? prefs?.range ?? null;
+
+    const payload = {
+      ...req.body,
+      google_access_token: googleAccessToken,
+      drive_folder_id,
+      spreadsheet_id,
+      range
+    };
 
     const upstream = await axios.post(webhookUrl, payload, { headers, timeout: 15000 });
     return res.status(upstream.status).send(upstream.data);
@@ -25,6 +47,31 @@ router.post('/process-invoice', authenticateToken, async (req, res) => {
       return res.status(error.response.status).send(error.response.data);
     }
     return res.status(502).send('Webhook request failed');
+  }
+});
+
+// Leer preferencias del workflow de facturas
+router.get('/invoice/prefs', authenticateToken, async (req, res) => {
+  try {
+    const prefs = await getInvoicePrefs(req.user.id);
+    return res.json({
+      drive_folder_id: prefs?.drive_folder_id || null,
+      spreadsheet_id: prefs?.spreadsheet_id || null,
+      range: prefs?.range || null
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load preferences' });
+  }
+});
+
+// Guardar/actualizar preferencias del workflow de facturas
+router.post('/invoice/prefs', authenticateToken, async (req, res) => {
+  try {
+    const { drive_folder_id, spreadsheet_id, range } = req.body;
+    await upsertInvoicePrefs(req.user.id, { drive_folder_id, spreadsheet_id, range });
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to save preferences' });
   }
 });
 

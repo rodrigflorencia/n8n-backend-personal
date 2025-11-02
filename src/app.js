@@ -13,6 +13,8 @@ const { demoRateLimit } = require('./middleware/rateLimit');
 const { createDemoAccess, executeWorkflow, getClientInfo } = require('./controllers/workflows');
 const { registerUser, loginUser } = require('./controllers/auth');
 const invoiceRoutes = require('./routes/invoice.routes');
+const oauthRoutes = require('./routes/oauth.routes');
+const workflowsRoutes = require('./routes/workflows.routes');
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -75,6 +77,10 @@ app.get('/health', (req, res) => {
 app.post('/api/demo/create', createDemoAccess);
 app.use('/api', authenticateToken, demoRateLimit);
 app.use('/api', invoiceRoutes);
+// Rutas OAuth: '/api/oauth/*' requieren auth a nivel de ruta o por este middleware global.
+// '/oauth/google/callback' es pública.
+app.use(oauthRoutes);
+app.use('/api', workflowsRoutes);
 app.post('/api/execute-workflow', executeWorkflow);
 app.get('/api/client-info', getClientInfo);
 
