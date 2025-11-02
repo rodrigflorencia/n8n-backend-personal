@@ -12,6 +12,7 @@ Backend en Node.js/Express para ejecutar _workflows_ con autenticación de usuar
 - **[Estructura del proyecto](#estructura-del-proyecto)**
 - **[Instalación y ejecución](#instalación-y-ejecución)**
 - **[Documentación OpenAPI/Swagger](#documentación-openapiswagger)**
+- **[Verificación](#verificación)**
 - **[Flujos principales](#flujos-principales)**
 - **[Esquema de base de datos](#esquema-de-base-de-datos)**
 - **[Seguridad](#seguridad)**
@@ -31,7 +32,7 @@ Backend en Node.js/Express para ejecutar _workflows_ con autenticación de usuar
 - **Supabase**:
   - Auth: validación del _token_ con `supabase.auth.getUser(token)`.
   - DB: tablas `user_credentials` (_tokens_ de aplicaciones de terceros) y `user_workflow_prefs` (preferencias por usuario/_workflow_).
-- **Middlewares**: `authenticateToken`, `demoRateLimit` (_rate limit_), `helmet`, `cors`, `morgan` para _logs_.
+- **Middlewares**: `authenticateToken`, `attachDemoClient`, `demoRateLimit` (_rate limit_), `helmet`, `cors`, `morgan` (usa logger Winston) para _logs_.
 
 ## Diagramas
 
@@ -127,25 +128,25 @@ Base URL local: `http://localhost:3000`
   - Respuesta: `{ status: 'ok', message, timestamp }`
 
 - **Auth de aplicación (Supabase)**
-  - `POST /api/auth/register` (ver Nota 1)
+  - `POST /api/auth/register` (público)
     - Body: `{ email, password, name }`
     - Crea el usuario en Supabase (_email_ confirmado).
-  - `POST /api/auth/login` (ver Nota 1)
+  - `POST /api/auth/login` (público)
     - Body: `{ email, password }`
     - Respuesta: `{ user, access_token, refresh_token }`
 
-- **Third-party OAuth**
-  - `GET /api/oauth/third/url` (protegido)
-    - Devuelve `auth_url` de third-party para el usuario autenticado.
-  - `GET /oauth/third/callback` (público)
-    - Intercambia `code` por _tokens_, y los guarda en `user_credentials`.
+- **Google OAuth**
+  - `GET /api/oauth/google/url` (protegido)
+    - Devuelve `auth_url` para el usuario autenticado.
+  - `GET /oauth/google/callback` (público)
+    - Intercambia `code` por _tokens_ y guarda en `user_credentials`.
     - Redirige si existen `OAUTH_SUCCESS_REDIRECT` / `OAUTH_FAIL_REDIRECT`.
-  - `GET /api/oauth/third/status` (protegido)
+  - `GET /api/oauth/google/status` (protegido)
     - `{ connected: boolean }` si hay _token_ disponible/refrescable.
 
 - **Workflows**
   - `GET /api/workflows` (protegido)
-    - Lista _workflows_ disponibles para el usuario. Incluye si tiene _third-party_ conectado y sus preferencias del _workflow_ de facturas.
+    - Lista _workflows_ disponibles para el usuario. Devuelve, por workflow: `key`, `name`, `description`, `requires`, `connected`, `prefs` y `actions` (si corresponde). No expone _tokens_. Incluye si tiene Google conectado y preferencias del workflow de facturas.
 
 - **Preferencias (workflow de facturas)**
   - `GET /api/invoice/prefs` (protegido)
@@ -158,21 +159,19 @@ Base URL local: `http://localhost:3000`
   - `POST /api/process-invoice` (protegido)
     - Headers reenviados a n8n: `X-Demo-Token` (opcional), `Content-Type: application/json`.
     - Toma el body o, si faltan, de `user_workflow_prefs`.
-    - Adjunta `third_access_token` del usuario.
-    - Forward a `WEBHOOK_URL` .
+    - Adjunta `google_access_token` del usuario.
+    - Forward a `N8N_WEBHOOK_URL`.
     - Errores:
-      - `412 THIRD_NOT_CONNECTED` si no hay conexión third-party.
+      - `412 GOOGLE_NOT_CONNECTED` si no hay conexión con Google.
       - `502 WEBHOOK_*` para problemas con automatizaciones.
 
 - **Demo (experimental)**
   - `POST /api/demo/create` (público)
-    - Crea un demo token y devuelve _workflows_ disponibles. Pensado para experimentación con `WFClient`.
+    - Crea un demo token y devuelve _workflows_ disponibles. Pensado para experimentación con `N8nClient`.
   - `POST /api/execute-workflow` y `GET /api/client-info` (protegidos)
     - Integración con `WFClient` basada en un `req.client` (ver Nota 2).
 
-> Nota 1: Por el _middleware_ global `authenticateToken` aplicado a `/api/*`, en la configuración actual estos _endpoints_ también requieren _token_. Si necesitas exponerlos públicos, mueve estas rutas fuera de `/api` o exclúyelas del _middleware_.
-
-> Nota 2: Las rutas de **demo** (`execute-workflow`, `client-info`) esperan `req.client`; no existe un _middleware_ actual que lo inyecte desde el **demo** _token_. Considéralo al usarlas o agrega el _middleware_ correspondiente.
+> Nota: Las rutas de **demo** (`execute-workflow`, `client-info`) usan `attachDemoClient` para poblar `req.client` desde `X-Demo-Token` o, en su defecto, desde `req.user`.
 
 ## Variables de entorno
 
@@ -182,6 +181,8 @@ Mínimas recomendadas:
 # Servidor
 PORT=3000
 NODE_ENV=development
+# Logging
+LOG_LEVEL=info
 
 # Supabase
 SUPABASE_URL=...
@@ -191,14 +192,19 @@ SUPABASE_SERVICE_ROLE_KEY=...
 JWT_SECRET=change-me
 DEMO_JWT_SECRET=change-me
 
+# Google OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+# Opcional: si no se define se usa {BASE_URL}/oauth/google/callback
+GOOGLE_REDIRECT_URI=https://tu-backend.com/oauth/google/callback
 
 # Redirecciones post OAuth (opcionales)
 OAUTH_SUCCESS_REDIRECT=https://tu-front.com/success
 OAUTH_FAIL_REDIRECT=https://tu-front.com/fail
 
 # n8n
-WEBHOOK_URL=https://.../webhook/demo/social-media    # usado por /api/process-invoice
-WEBHOOK_BASE_URL=https://.../webhook                  # usado por WFClient
+N8N_WEBHOOK_URL=https://.../webhook/demo/social-media    # usado por /api/process-invoice
+N8N_WEBHOOK_BASE_URL=https://.../webhook                  # usado por N8nClient
 DEMO_TOKEN_SOCIAL=...
 DEMO_TOKEN_OCR=...
 DEMO_TOKEN_CONTRACTS=...
@@ -222,19 +228,19 @@ src/
     auth.js                   # Register/Login via Supabase
     workflows.js              # Demo: createDemoAccess/executeWorkflow/getClientInfo
   middleware/
-    auth.js                   # authenticateToken (Supabase), generateDemoToken
+    auth.js                   # authenticateToken (Supabase), attachDemoClient, generateDemoToken
     rateLimit.js              # demoRateLimit por cliente
+    logger.js                 # Logger central Winston
   routes/
     invoice.routes.js         # /process-invoice, /invoice/prefs
-    oauth.routes.js           
-    callback
+    oauth.routes.js           # /api/oauth/google/url, /oauth/google/callback, /api/oauth/google/status
     workflows.routes.js       # /api/workflows
     protected.js              # Ejemplo de ruta protegida genérica
   services/
-    thirdOAuth.js            # buildAuthUrl, exchangeCode, getUserAccessToken
+    googleOAuth.js           # buildAuthUrl, exchangeCode, getUserAccessToken
     preferences.js            
   utils/
-    wfClient.js              # Ejecutor de workflows demo (por tipo)
+    n8nClient.js             # Ejecutor de workflows demo (por tipo)
 ```
 
 ## Instalación y ejecución
@@ -260,6 +266,19 @@ npm start
 ```
 
 Health check: `GET /health`
+
+## Verificación
+
+- **Ejecutar contra server ya levantado**:
+  - `npm run verify`
+  - Env soportadas:
+    - `BASE_URL` (por defecto `http://localhost:${PORT||3000}`)
+    - `TEST_ACCESS_TOKEN` o `TEST_EMAIL`/`TEST_PASSWORD` para rutas protegidas
+    - `SKIP_DB=1` para saltar checks dependientes de DB (por defecto en verify:start)
+    - `VERIFY_RATELIMIT=1` para probar 429
+    - `TEST_WRITE=1` para probar POST `/api/invoice/prefs`
+- **Arrancar y verificar en un puerto temporal**:
+  - `npm run verify:start` (usa `VERIFY_PORT=3456` por defecto)
 
 ## Documentación OpenAPI/Swagger
 
@@ -320,6 +339,8 @@ create table if not exists public.user_credentials (
 create table if not exists public.user_workflow_prefs (
   user_id uuid not null,
   workflow text not null,
+  drive_folder_id text,
+  spreadsheet_id text,
   range text,
   updated_at timestamptz default now(),
   primary key (user_id, workflow)
@@ -342,5 +363,5 @@ create table if not exists public.user_workflow_prefs (
 
 ## Notas y próximos pasos
 
-- Si deseas que `POST /api/auth/register` y `POST /api/auth/login` sean públicos, muévelos fuera del prefijo `/api` o exclúyelos del _middleware_ global de autenticación.
-- Para habilitar rutas de demo (`/api/execute-workflow`, `/api/client-info`): agrega un _middleware_ que valide el demo _token_ (`DEMO_JWT_SECRET`) e inyecte `req.client` con `{ id, type, workflows, createdAt, expiresAt }`.
+- `POST /api/auth/register` y `POST /api/auth/login` son públicos por diseño.
+- Las rutas de demo usan `attachDemoClient` que inyecta `req.client` (`{ id, type, workflows, createdAt, expiresAt }`).

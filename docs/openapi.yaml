@@ -201,7 +201,7 @@ paths:
     post:
       tags: [Auth]
       summary: Registrar usuario en Supabase
-      description: "Nota: En la implementación actual puede requerir token por el middleware global de /api."
+      security: []
       requestBody:
         required: true
         content:
@@ -229,7 +229,7 @@ paths:
     post:
       tags: [Auth]
       summary: Login de usuario (Supabase)
-      description: "Nota: En la implementación actual puede requerir token por el middleware global de /api."
+      security: []
       requestBody:
         required: true
         content:
@@ -397,6 +397,8 @@ paths:
     post:
       tags: [Demo]
       summary: Ejecutar workflow (requiere req.client)
+      parameters:
+        - $ref: '#/components/parameters/DemoTokenHeader'
       requestBody:
         required: true
         content:
@@ -432,6 +434,8 @@ paths:
     get:
       tags: [Demo]
       summary: Información del cliente demo (requiere req.client)
+      parameters:
+        - $ref: '#/components/parameters/DemoTokenHeader'
       responses:
         '200':
           description: Información del cliente
