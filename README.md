@@ -42,8 +42,8 @@ Backend en Node.js/Express para ejecutar _workflows_ con autenticación de usuar
 
 
 flowchart TD
-    FE[Frontend] -->|HTTP| API[(Express API)]
-    API -->|Auth JWT| SUPA[(Supabase Auth)]
+    FE[Frontend] -->|HTTP| API[Express API]
+    API -->|Auth JWT| DB[(Supabase Auth)]
     API -->|DB| DB[(Postgres)]
     API -->|OAuth| OAUTH[OAuth Provider]
     API -->|Workflow| WF[Workflow Engine]
