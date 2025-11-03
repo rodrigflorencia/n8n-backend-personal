@@ -18,7 +18,7 @@ function buildAuthUrl(baseUrl, userId) {
   const state = jwt.sign({ uid: userId, t: Date.now() }, process.env.JWT_SECRET || 'change-me', { expiresIn: '10m' });
   const scope = [
     'https://www.googleapis.com/auth/drive.readonly',
-   
+   'https://www.googleapis.com/auth/spreadsheets',
   ].join(' ');
   const params = new URLSearchParams({
     client_id: clientId,
