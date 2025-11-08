@@ -36,10 +36,17 @@ const app = express();
 // Security middleware
 //app.use(securityHeaders);
 app.use(helmet());
+const whitelist = [
+  'https://qubitapp.web.app',
+  'https://consulor-ia.web.app'
+];
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? 'https://consulor-ia.web.app'
-    : '*',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (whitelist.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-api-key', 'x-demo-token', 'x-client-id', 'x-request-source']
 }));
